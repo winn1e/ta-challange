@@ -1,4 +1,4 @@
-service: ta-challange
+service: ta-challenge
 frameworkVersion: '3'
 
 provider:
