@@ -1,0 +1,179 @@
+service: ta-challange
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:Query
+            - dynamodb:UpdateItem
+          Resource: arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-*
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+          Resource: arn:aws:ses:*
+        - Effect: Allow
+          Action:
+            - sqs:*
+          Resource:
+            Fn::GetAtt: [ BotsQueue, Arn ]
+
+plugins:
+  - serverless-plugin-typescript
+  - serverless-offline
+
+functions:
+  authorizer:
+    handler: src/handlers/authorizer/authorizer-handler.handler
+    environment:
+      JWT_SECRET: and0X3NlY3JldA==
+  signin:
+    handler: src/handlers/signin/signin-handler.handler
+    events:
+      - http:
+          path: /signin
+          method: post
+          cors: true
+    environment:
+      DB_SESSIONS_TABLE: { Ref: LoginSessionsTable }
+      SES_SENDER: ta.challange@gmail.com
+      OTP_TTL_MINUTES: 5
+  signin-mfa:
+    handler: src/handlers/signin/mfa-handler.handler
+    events:
+      - http:
+          path: /signin/mfa
+          method: post
+          cors: true
+    environment:
+      DB_SESSIONS_TABLE: { Ref: LoginSessionsTable }
+      JWT_SECRET: and0X3NlY3JldA==
+  get-bots:
+    handler: src/handlers/bots/get-bots-handler.handler
+    events:
+      - http:
+          path: /bots
+          method: get
+          authorizer: authorizer
+          cors: true
+    environment:
+      DB_BOTS_TABLE: { Ref: BotsTable }
+  run-bot:
+    handler: src/handlers/bots/run-bot-handler.handler
+    events:
+      - http:
+          path: /bots/{id}/run
+          method: post
+          authorizer: authorizer
+          cors: true
+          request:
+            parameters:
+              paths:
+                id: true
+    environment:
+      SQS_BOTS_QUEUE_URL: { Ref: BotsQueue }
+      DB_BOTS_TABLE: { Ref: BotsTable }
+  bots-finished:
+    handler: src/handlers/bots/bots-finished-handler.handler
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [ BotsQueue, Arn ]
+    environment:
+      DB_BOTS_TABLE: { Ref: BotsTable }
+
+resources:
+  Resources:
+    LoginSessionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-login-sessions-${sls:stage}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: otp
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: otp
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+    BotsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-bots-${sls:stage}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: owner
+            AttributeType: S
+        KeySchema:
+          - AttributeName: owner
+            KeyType: HASH
+          - AttributeName: id
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+    GatewayResponseDefault4XX:
+      Type: 'AWS::ApiGateway::GatewayResponse'
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+          gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        ResponseType: DEFAULT_4XX
+        RestApiId:
+          Ref: 'ApiGatewayRestApi'
+    GatewayResponseDefault5XX:
+      Type: 'AWS::ApiGateway::GatewayResponse'
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+          gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        ResponseType: DEFAULT_5XX
+        RestApiId:
+          Ref: 'ApiGatewayRestApi'
+
+    BotsQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-bots-running-${sls:stage}
+
+    S3BucketWebsite:
+      Type: 'AWS::S3::Bucket'
+      Properties:
+        BucketName: ${self:service}-web-${sls:stage}
+        # AccessControl: PublicRead
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: false
+        OwnershipControls:
+          Rules:
+            - ObjectOwnership: ObjectWriter
+        WebsiteConfiguration:
+          IndexDocument: index.html
+          ErrorDocument: index.html
+      DeletionPolicy: Retain
+
+    BucketPolicy:
+      Type: 'AWS::S3::BucketPolicy'
+      Properties:
+        Bucket: !Ref S3BucketWebsite
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource:
+              Fn::Join:
+                - ''
+                - - Fn::GetAtt: [ S3BucketWebsite, Arn ]
+                  - '/*'
