@@ -32,7 +32,7 @@ functions:
   authorizer:
     handler: src/handlers/authorizer/authorizer-handler.handler
     environment:
-      JWT_SECRET: and0X3NlY3JldA==
+      JWT_SECRET: ${param:jwt_secret}
   signin:
     handler: src/handlers/signin/signin-handler.handler
     events:
@@ -53,7 +53,7 @@ functions:
           cors: true
     environment:
       DB_SESSIONS_TABLE: { Ref: LoginSessionsTable }
-      JWT_SECRET: and0X3NlY3JldA==
+      JWT_SECRET: ${param:jwt_secret}
   get-bots:
     handler: src/handlers/bots/get-bots-handler.handler
     events:
