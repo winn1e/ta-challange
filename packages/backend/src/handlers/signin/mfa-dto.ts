@@ -16,6 +16,7 @@ export const mfaDtoSchema: JSONSchemaType<MFADto> = {
 			type: 'string',
 			minLength: 6,
 			maxLength: 6,
+			transform: ['trim'],
 		},
 	},
 	required: ['loginSessionId', 'otp'],

@@ -10,6 +10,7 @@ export const signInDtoSchema: JSONSchemaType<SignInDto> = {
 		email: {
 			type: 'string',
 			format: 'email',
+			transform: ['trim'],
 		},
 	},
 	required: ['email'],
